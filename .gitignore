@@ -1,0 +1,48 @@
+# --- Secrets / environment ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+client_secret*.json
+
+# --- Python ---
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+
+# --- Node ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- Logs ---
+logs/
+*.log
+
+# --- Large / model files ---
+*.bin
+*.gguf
+*.safetensors
+*.onnx
+*.pt
+*.pth
+*.ckpt
+models/
+
+# --- n8n local data ---
+.n8n/
+n8n-data/
+
+# --- Local tooling / harness ---
+.claude/
+
+# --- OS / editor noise ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
