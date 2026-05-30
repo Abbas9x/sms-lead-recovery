@@ -1,0 +1,3075 @@
+{
+  "name": "Lead Recovery - Main Lead Processor",
+  "description": null,
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "REPLACE_WITH_FOLLOWUP_SECRET_PATH",
+        "options": {}
+      },
+      "id": "a3d5f641-a4eb-448a-9f95-93225835899f",
+      "name": "Webhook (Follow-Up Trigger)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1760,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// NODE 2 — Validate Payload\nconst item = $input.first();\nconst body = item.json.body || item.json;\n\nconst phone = (body.phone || '').toString().trim();\nconst delayHoursRaw = body.delay_hours;\nlet delayHours = Number(delayHoursRaw);\nif (!Number.isFinite(delayHours) || delayHours <= 0 || delayHours > 168) {\n  delayHours = 24;\n}\n\n// Strict E.164 +1 US format check\nif (!/^\\+1\\d{10}$/.test(phone)) {\n  // Invalid → stop with explicit flag\n  return [{ json: { valid: false, validation_error: 'invalid_phone', received_payload: body } }];\n}\n\nreturn [{\n  json: {\n    valid: true,\n    phone,\n    name: body.name || null,\n    service_requested: body.service_requested || 'your inquiry',\n    intent_score: Number(body.intent_score) || 50,\n    follow_up_question: body.follow_up_question || null,\n    lead_ref: body.lead_ref || null,\n    delay_hours: delayHours\n  }\n}];\n"
+      },
+      "id": "91340843-9df8-4069-85ca-5ab021546847",
+      "name": "Validate Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1536,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "is-valid",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "410560fc-76c0-4275-b15c-f862c56ad559",
+      "name": "Payload Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1312,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "error_log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ new Date().toISOString() }}",
+            "phone": "={{ ($json.received_payload && $json.received_payload.phone) || '' }}",
+            "error_type": "wf2_invalid_payload",
+            "error_message": "={{ $json.validation_error || 'unknown' }}",
+            "raw_input": "={{ JSON.stringify($json.received_payload || {}).substring(0,500) }}",
+            "node_name": "Validate Payload"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "error_type",
+              "displayName": "error_type",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "error_message",
+              "displayName": "error_message",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "raw_input",
+              "displayName": "raw_input",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "node_name",
+              "displayName": "node_name",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2300d49f-cdbd-497d-a6ce-bf6ece776106",
+      "name": "Log Invalid Payload",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        -1088,
+        880
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "amount": "={{ $json.delay_hours }}",
+        "unit": "hours"
+      },
+      "id": "0575e08d-c74b-4dd0-9aaa-3c2678357f80",
+      "name": "Wait 24h (Configurable)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -1088,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "lookup",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        }
+      },
+      "id": "dcbdc3ce-ac33-4258-98fb-01e271709bb4",
+      "name": "Lookup Current Lead Status",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        -864,
+        688
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "opt_outs",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "dc6d826f-9779-4e10-b132-8e3132562365",
+      "name": "Read Opt-Outs (Safety Recheck)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        -640,
+        688
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// NODE — Status Gate\n// Looks up the lead row(s) and the opt_outs table, then decides whether to proceed.\nconst payload = $('Validate Payload').first().json;\nconst leadRows = $items('Lookup Current Lead Status').map(i => i.json).filter(r => r && r.phone);\nconst optOutRows = $items('Read Opt-Outs (Safety Recheck)').map(i => i.json).filter(r => r && r.phone);\n\nconst phone = payload.phone;\nconst leadRef = payload.lead_ref;\n\n// 1) Opt-out hard stop\nconst isOptedOut = optOutRows.some(r => (r.phone || '').toString().trim() === phone);\nif (isOptedOut) {\n  return [{ json: { ...payload, should_send: false, stop_reason: 'opted_out_at_followup_time' } }];\n}\n\nif (!leadRows.length) {\n  return [{ json: { ...payload, should_send: false, stop_reason: 'lead_row_not_found' } }];\n}\n\n// 2) Find the right lead row — prefer match on lead_ref (id column), else most recent\nlet targetRow = null;\nif (leadRef) {\n  targetRow = leadRows.find(r => (r.id || '').toString() === leadRef.toString()) || null;\n}\nif (!targetRow) {\n  targetRow = leadRows.slice().sort((a, b) => Date.parse(b.timestamp || 0) - Date.parse(a.timestamp || 0))[0];\n}\n\nconst currentStatus = (targetRow.status || '').toLowerCase().trim();\nconst STOP_STATUSES = ['booked', 'closed', 'opted_out', 'contacted_high', 'follow_up_sent'];\nif (STOP_STATUSES.includes(currentStatus)) {\n  return [{ json: { ...payload, should_send: false, stop_reason: 'status_already_' + currentStatus, current_status: currentStatus, row_id: targetRow.id, row_phone: targetRow.phone } }];\n}\n\nif (currentStatus !== 'follow_up_scheduled') {\n  return [{ json: { ...payload, should_send: false, stop_reason: 'unexpected_status_' + currentStatus, current_status: currentStatus } }];\n}\n\nreturn [{\n  json: {\n    ...payload,\n    should_send: true,\n    current_status: currentStatus,\n    row_id: targetRow.id,\n    row_phone: targetRow.phone,\n    row_existing_notes: targetRow.notes || ''\n  }\n}];\n"
+      },
+      "id": "a8f6763c-2604-47c9-954b-67c3031b3368",
+      "name": "Status Gate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -416,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "should-send",
+              "leftValue": "={{ $json.should_send }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ddc9a003-67a6-4222-b51d-d2f267aa8e8f",
+      "name": "Send Follow-Up?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -192,
+        688
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "9cefd85e-843e-43ce-a0fe-9ff7eb619661",
+      "name": "Stop — Status Gate Blocked",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        32,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// NODE — Build Follow-Up SMS\nconst d = $json;\nconst firstName = d.name ? String(d.name).trim().split(/\\s+/)[0] : null;\nconst greeting = firstName ? `Hi ${firstName},` : 'Hi there,';\nconst biz = $env.BUSINESS_NAME || 'us';\nconst svc = d.service_requested || 'your inquiry';\nconst booking = ($env.BOOKING_LINK || '').trim();\nconst phone = $env.BUSINESS_PHONE || '';\n\nlet body;\nif (booking) {\n  body = `${greeting} just following up from ${biz}! Still interested in ${svc}? You can book directly here: ${booking} — Reply STOP to opt out.`;\n} else {\n  body = `${greeting} just following up from ${biz}! Still interested in ${svc}? Give us a call at ${phone} — we'd love to help. — Reply STOP to opt out.`;\n}\nreturn [{ json: { ...d, sms_body: body } }];\n"
+      },
+      "id": "c25f9c12-6564-46cc-8715-8b4cfbcb7f90",
+      "name": "Build Follow-Up SMS",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        32,
+        592
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $env.TWILIO_ACCOUNT_SID }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json.phone }}"
+            },
+            {
+              "name": "From",
+              "value": "={{ $env.TWILIO_PHONE_NUMBER }}"
+            },
+            {
+              "name": "Body",
+              "value": "={{ $json.sms_body }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "efd6dfd8-1a09-4123-b2a3-2d6e13126c24",
+      "name": "Send Follow-Up SMS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        256,
+        592
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "",
+          "name": "Unnamed credential"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "error_log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ new Date().toISOString() }}",
+            "phone": "={{ $json.phone }}",
+            "error_type": "wf2_sms_send_failure",
+            "error_message": "={{ JSON.stringify($json).substring(0,500) }}",
+            "raw_input": "={{ ($json.sms_body || '').substring(0,500) }}",
+            "node_name": "Send Follow-Up SMS"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "error_type",
+              "displayName": "error_type",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "error_message",
+              "displayName": "error_message",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "raw_input",
+              "displayName": "raw_input",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "node_name",
+              "displayName": "node_name",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "0b4ee066-4dac-420c-8767-d8d8ce34ec97",
+      "name": "Log SMS Send Failure",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        480,
+        688
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $env.TWILIO_ACCOUNT_SID }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $env.OWNER_PHONE }}"
+            },
+            {
+              "name": "From",
+              "value": "={{ $env.TWILIO_PHONE_NUMBER }}"
+            },
+            {
+              "name": "Body",
+              "value": "=⚠️ {{ $env.BUSINESS_NAME }} — 24h follow-up SMS to {{ $json.phone }} failed. Check error_log."
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "b5e9f3a4-1d33-4f75-80d1-d4c379f0d419",
+      "name": "Notify Owner of Send Failure",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        704,
+        688
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "",
+          "name": "Unnamed credential"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare update payload — append timestamp note to existing notes\nconst d = $json;\nconst nowIso = new Date().toISOString();\nconst existingNotes = d.row_existing_notes || '';\nconst newNote = `${existingNotes}\\n[${nowIso}]: 24h follow-up SMS sent`.trim();\nreturn [{ json: { ...d, _update_status: 'follow_up_sent', _update_notes: newNote, _update_last_contact: nowIso } }];\n"
+      },
+      "id": "408927ee-ce14-4b6d-a928-49b53448f20d",
+      "name": "Prep Lead Status Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.row_id }}",
+            "status": "={{ $json._update_status }}",
+            "notes": "={{ $json._update_notes }}",
+            "last_contact": "={{ $json._update_last_contact }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "defaultMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "last_contact",
+              "displayName": "last_contact",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "9db25ac8-7e8a-4445-93bb-18f7d3122004",
+      "name": "Update Lead → follow_up_sent",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        704,
+        496
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "REPLACE_WITH_WEBHOOK_SECRET_PATH",
+        "options": {
+          "rawBody": false
+        }
+      },
+      "id": "9551a217-9b31-4e29-9ded-0dea9c5b7cc0",
+      "name": "Webhook (Twilio Inbound SMS)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1760,
+        -592
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\nconst params = item.json.body || item.json;\nreturn [{ \n  json: { \n    ...params, \n    _sig_validated: false, \n    _sig_skipped: true, \n    _twilio_message_sid: params.MessageSid || null \n  } \n}];"
+      },
+      "id": "506ab4a5-3e8c-42b8-8c21-37f51c6867c7",
+      "name": "Twilio Signature Validation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1536,
+        -592
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "opt_outs",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "e0f84ca0-7dba-48bc-8615-a72467d43bb5",
+      "name": "Read Opt-Outs Tab",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        -1312,
+        -592
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// NODE 4 — Opt-Out & Compliance Keyword Detection\n// Reads original Twilio payload from sig validation node, and opt_outs rows from the previous Sheets read.\n\nconst twilioItem = $('Twilio Signature Validation').first().json;\nconst optOutRows = $items('Read Opt-Outs Tab').map(i => i.json);\n\nconst fromRaw = (twilioItem.From || '').toString();\nconst body = (twilioItem.Body || '').toString().trim();\nconst bodyLower = body.toLowerCase();\n\n// Normalize phone for comparison (strip non-digits, prefix +1 if 10 digit US)\nfunction normalizePhone(p) {\n  if (!p) return null;\n  const digits = String(p).replace(/[^0-9]/g, '');\n  if (digits.length === 10) return '+1' + digits;\n  if (digits.length === 11 && digits.startsWith('1')) return '+' + digits;\n  if (digits.length === 12) return '+' + digits.replace(/^\\+/, '');\n  if (String(p).startsWith('+') && digits.length >= 10) return '+' + digits;\n  return null;\n}\n\nconst phone = normalizePhone(fromRaw);\n\nconst OPT_OUT_KEYWORDS = ['stop', 'stopall', 'unsubscribe', 'cancel', 'end', 'quit'];\nconst HELP_KEYWORDS = ['help', 'info'];\nconst START_KEYWORDS = ['start', 'unstop', 'yes', 'resubscribe'];\n\nfunction matchesKeyword(text, list) {\n  if (!text) return false;\n  if (list.includes(text)) return true; // exact whole-message\n  for (const k of list) {\n    // Match as whole word\n    const re = new RegExp('(^|\\\\s|[!?.,;])' + k + '($|\\\\s|[!?.,;])', 'i');\n    if (re.test(text)) return true;\n  }\n  return false;\n}\n\nconst isOptOut = matchesKeyword(bodyLower, OPT_OUT_KEYWORDS);\nconst isHelp = !isOptOut && matchesKeyword(bodyLower, HELP_KEYWORDS);\nconst isStart = !isOptOut && !isHelp && matchesKeyword(bodyLower, START_KEYWORDS);\n\n// Check if already in opt_outs sheet\nlet alreadyOptedOut = false;\nlet optOutRowIndex = null;\nfor (let i = 0; i < optOutRows.length; i++) {\n  const r = optOutRows[i];\n  const rowPhone = (r.phone || '').toString().trim();\n  if (rowPhone === phone) {\n    alreadyOptedOut = true;\n    optOutRowIndex = i; // 0-based within data; sheet row = i + 2 (header offset)\n    break;\n  }\n}\n\nlet action = 'continue';\nif (isOptOut) action = 'opt_out';\nelse if (isHelp) action = 'help';\nelse if (isStart) action = 'start';\nelse if (alreadyOptedOut) action = 'already_opted_out';\n\nreturn [{\n  json: {\n    ...twilioItem,\n    phone_normalized: phone,\n    body_clean_preview: body.substring(0, 200),\n    action,\n    already_opted_out: alreadyOptedOut,\n    opt_out_row_index: optOutRowIndex,\n    opt_out_sheet_row: optOutRowIndex != null ? (optOutRowIndex + 2) : null\n  }\n}];\n"
+      },
+      "id": "eab56a70-be6f-48b5-88cf-b8c5fdd29571",
+      "name": "Opt-Out Detection",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1088,
+        -592
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "opt_out",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "help",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "start",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "already_opted_out",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "continue",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f048c10a-e08a-40ca-bd28-dc26ad3b4278",
+      "name": "Opt-Out Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -864,
+        -640
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "opt_outs",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "phone": "={{ $json.phone_normalized }}",
+            "opted_out_at": "={{ new Date().toISOString() }}",
+            "businessId": "={{ $env.BUSINESS_NAME }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "opted_out_at",
+              "displayName": "opted_out_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "businessId",
+              "displayName": "businessId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "9c569e67-019f-4337-94b5-90f9d295eebd",
+      "name": "Append to Opt-Outs",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        -640,
+        -880
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $env.TWILIO_ACCOUNT_SID }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json.phone_normalized }}"
+            },
+            {
+              "name": "From",
+              "value": "={{ $env.TWILIO_PHONE_NUMBER }}"
+            },
+            {
+              "name": "Body",
+              "value": "=You have been unsubscribed from {{ $env.BUSINESS_NAME }} messages. Reply START to resubscribe."
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "19ff7f5d-032a-4cb8-96e2-92221b9197e3",
+      "name": "Send Opt-Out Confirmation SMS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -416,
+        -880
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "",
+          "name": "Unnamed credential"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $env.TWILIO_ACCOUNT_SID }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json.phone_normalized }}"
+            },
+            {
+              "name": "From",
+              "value": "={{ $env.TWILIO_PHONE_NUMBER }}"
+            },
+            {
+              "name": "Body",
+              "value": "=For help, contact {{ $env.BUSINESS_NAME }} at {{ $env.BUSINESS_PHONE }}. Reply STOP to unsubscribe."
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "4ccd7e63-650a-4186-af8a-4b1e6a695753",
+      "name": "Send Help SMS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -640,
+        -688
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "",
+          "name": "Unnamed credential"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Resolve opt_out sheet row number for the inbound phone (1-based, with header at row 1)\nconst phone = $json.phone_normalized;\nconst rowIdx = $json.opt_out_sheet_row;\nif (!rowIdx) {\n  // Not actually in opt_outs — nothing to delete; emit empty so deletion node is a no-op.\n  return [{ json: { ...$json, _delete_target_row: null } }];\n}\nreturn [{ json: { ...$json, _delete_target_row: rowIdx } }];\n"
+      },
+      "id": "db838f10-09b2-4a94-b2e5-01085b783e71",
+      "name": "Resolve START Target Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -640,
+        -496
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "has-row",
+              "leftValue": "={{ $json._delete_target_row }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "689c6b97-8987-487f-a2ef-79f49d68a27e",
+      "name": "Has Opt-Out Row To Remove?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -416,
+        -496
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "opt_outs",
+          "mode": "name"
+        },
+        "startIndex": "={{ $json._delete_target_row }}"
+      },
+      "id": "375bf2c0-7bee-48d2-bec4-339370901570",
+      "name": "Remove from Opt-Outs",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        -192,
+        -576
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $env.TWILIO_ACCOUNT_SID }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json.phone_normalized }}"
+            },
+            {
+              "name": "From",
+              "value": "={{ $env.TWILIO_PHONE_NUMBER }}"
+            },
+            {
+              "name": "Body",
+              "value": "=You have been resubscribed to {{ $env.BUSINESS_NAME }} messages."
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "cd97906e-8b1b-4ed4-9452-6f0a3753db02",
+      "name": "Send Resubscribe SMS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        32,
+        -496
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "",
+          "name": "Unnamed credential"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {},
+      "id": "06393f5c-a8c3-497c-875d-01957f624383",
+      "name": "Stop — Already Opted Out",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -640,
+        -304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// NODE — Rate Limit (in-memory short-term throttle)\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) staticData.rateLimits = {};\n\nconst phone = $json.phone_normalized;\nconst now = Date.now();\n\n// Clean entries older than 10 min\nconst cutoff = now - 600000;\nfor (const k of Object.keys(staticData.rateLimits)) {\n  if ((staticData.rateLimits[k] || 0) < cutoff) delete staticData.rateLimits[k];\n}\n\nconst last = staticData.rateLimits[phone] || 0;\nif (last && (now - last) < 60000) {\n  console.log(`Rate limit hit for ${phone} — silently dropping inbound.`);\n  return []; // silent drop, returns empty → execution stops on this branch\n}\nstaticData.rateLimits[phone] = now;\n\nreturn [{ json: { ...$json, rate_limit_pass: true, rate_limit_ts: now } }];\n"
+      },
+      "id": "da3a65f9-dcc1-4759-bf6c-05739b11c596",
+      "name": "Rate Limit Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -640,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "rate_limit_log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "phone": "={{ $json.phone_normalized }}",
+            "last_seen": "={{ new Date().toISOString() }}",
+            "request_count": "=1"
+          },
+          "matchingColumns": [
+            "phone"
+          ],
+          "schema": [
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last_seen",
+              "displayName": "last_seen",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "request_count",
+              "displayName": "request_count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "44587e0a-87d1-4b7b-9ca8-4627cc988615",
+      "name": "Rate Limit Long-Term Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        -416,
+        -112
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// NODE — Data Cleaning & Normalization\nconst src = $('Rate Limit Check').first().json;\nconst bodyRaw = (src.Body || '').toString();\n\n// Phone already normalized upstream; re-validate strictly here.\nconst phone = src.phone_normalized;\nif (!phone || !/^\\+1\\d{10}$/.test(phone)) {\n  // Hand off to error path via a thrown error; caller has onError handling.\n  return [{ json: { ...src, validation_failed: true, validation_error: 'invalid_phone' } }];\n}\n\nlet body = bodyRaw.trim();\nif (!body) {\n  return []; // silent stop\n}\nif (body.length === 1) {\n  return []; // single char\n}\n// Strip emoji + whitespace; if nothing left → pure emoji\nconst stripped = body.replace(/[\\p{Extended_Pictographic}\\p{Emoji_Presentation}\\s]/gu, '');\nif (stripped.length === 0) {\n  return [];\n}\n\nif (body.length > 1000) body = body.substring(0, 1000);\n\nconst lower = body.toLowerCase();\nconst INJECTION_PATTERNS = [\n  'ignore previous','ignore all','system:','assistant:',\n  'new instruction','forget everything','you are now',\n  'disregard','override'\n];\nlet flagged = false;\nlet flaggedPattern = null;\nfor (const p of INJECTION_PATTERNS) {\n  if (lower.includes(p)) { flagged = true; flaggedPattern = p; break; }\n}\n\nreturn [{\n  json: {\n    ...src,\n    phone_normalized: phone,\n    message_clean: body,\n    message_length: body.length,\n    injection_flagged: flagged,\n    injection_pattern: flaggedPattern,\n    validation_failed: false\n  }\n}];\n"
+      },
+      "id": "6cd888eb-2770-4b17-aa3e-1f961e1c7ea2",
+      "name": "Data Cleaning",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -192,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "lookup",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        }
+      },
+      "id": "d78bdaf0-3a88-4b33-934f-3bb47c1f1fdd",
+      "name": "Lookup Existing Leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        32,
+        -112
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// NODE — Deduplication Check\nconst clean = $('Data Cleaning').first().json;\nconst existing = $items('Lookup Existing Leads').map(i => i.json).filter(r => r && r.phone);\n\nconst now = new Date();\nconst sevenDaysAgo = now.getTime() - (7 * 24 * 60 * 60 * 1000);\n\n// Find an active duplicate within 7 days\nlet duplicate = null;\nfor (const row of existing) {\n  const status = (row.status || '').toLowerCase();\n  if (status === 'closed' || status === 'opted_out') continue;\n  const ts = Date.parse(row.timestamp);\n  if (isNaN(ts)) continue;\n  if (ts >= sevenDaysAgo) {\n    if (!duplicate || ts > Date.parse(duplicate.timestamp)) duplicate = row;\n  }\n}\n\nif (duplicate) {\n  return [{\n    json: {\n      ...clean,\n      is_duplicate: true,\n      existing_lead_id: duplicate.id || null,\n      existing_row_number: duplicate.row_number || duplicate.rowNumber || null,\n      existing_notes: duplicate.notes || '',\n      existing_phone: duplicate.phone\n    }\n  }];\n}\n\nreturn [{ json: { ...clean, is_duplicate: false, lead_is_new: true } }];\n"
+      },
+      "id": "180b7c38-6a4e-4686-b4ff-cdff307ae213",
+      "name": "Deduplication Logic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        256,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "is-dup",
+              "leftValue": "={{ $json.is_duplicate }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "10164aa3-f2b4-48c4-8293-551f4ac9ce0d",
+      "name": "Is Duplicate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "phone": "={{ $json.phone_normalized }}",
+            "notes": "={{ ($json.existing_notes || '') + '\\n[' + new Date().toISOString() + ']: ' + $json.message_clean }}",
+            "last_contact": "={{ new Date().toISOString() }}"
+          },
+          "matchingColumns": [
+            "phone"
+          ],
+          "schema": [
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "last_contact",
+              "displayName": "last_contact",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "dc498cce-f7a4-402c-a037-c7265ea2c79d",
+      "name": "Append Duplicate to Notes",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        704,
+        -208
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-5\",\n  \"max_tokens\": 400,\n  \"temperature\": 0,\n  \"system\": \"You are a lead qualification AI for local service businesses. Your only job is to analyze inbound SMS messages from potential customers and return structured data. You must output ONLY a raw JSON object. No markdown formatting. No code blocks. No backticks. No explanation text before or after. Just the JSON object starting with { and ending with }.\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify('Inbound SMS from potential customer:\\n\"' + ($json.message_clean || '').replace(/\"/g, '\\\\\"') + '\"\\n\\nAnalyze this message and return this exact JSON structure with no extra text:\\n{\"name\": \"extracted name or null if not found\", \"service_requested\": \"what service they want, inferred from context\", \"urgency\": \"low or medium or high\", \"intent_score\": a number from 0 to 100 representing how likely this person is to book, \"summary\": \"one sentence describing this lead\", \"recommended_action\": \"book or followup or ignore\", \"follow_up_question\": \"one specific clarifying question to ask them, or null if not needed\"}') }}\n    }\n  ]\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "64a3eb01-caca-4cc7-aaec-5bbad63b7a1b",
+      "name": "Claude Classification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        704,
+        -16
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Header Auth account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst priorLead = $('Deduplication Logic').first().json;\n\nlet rawText = '';\ntry {\n  rawText = response.content[0].text;\n} catch(e) {\n  rawText = JSON.stringify(response);\n}\n\nrawText = String(rawText).trim();\n\nlet parsed = null;\n\ntry {\n  parsed = JSON.parse(rawText);\n} catch(e) {\n  const first = rawText.indexOf('{');\n  const last = rawText.lastIndexOf('}');\n  if (first !== -1 && last !== -1) {\n    try {\n      parsed = JSON.parse(rawText.substring(first, last + 1));\n    } catch(e2) {}\n  }\n}\n\nif (!parsed) {\n  return [{ json: { ...priorLead, parse_failed: true, raw_claude_response: rawText.substring(0, 200) }}];\n}\n\nconst intent_score = Math.min(100, Math.max(0, parseInt(parsed.intent_score) || 50));\nconst urgency = ['low','medium','high'].includes(parsed.urgency) ? parsed.urgency : 'medium';\nlet recommended_action = ['book','followup','ignore'].includes(parsed.recommended_action) ? parsed.recommended_action : (intent_score >= 80 ? 'book' : intent_score >= 50 ? 'followup' : 'ignore');\n\nreturn [{ json: {\n  ...priorLead,\n  parse_failed: false,\n  name: parsed.name || null,\n  service_requested: parsed.service_requested || 'your inquiry',\n  urgency,\n  intent_score,\n  recommended_action,\n  summary: parsed.summary || 'Lead submitted via SMS',\n  follow_up_question: parsed.follow_up_question || null\n}}];"
+      },
+      "id": "650e298f-687c-423f-88ea-c3db9ee06281",
+      "name": "Claude Response Parser",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        928,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "parse-failed",
+              "leftValue": "={{ $json.parse_failed }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "22b30a71-be36-4633-9f4c-d1004d9d1526",
+      "name": "Parse Failed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1152,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "error_log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ new Date().toISOString() }}",
+            "phone": "={{ $json.phone_normalized }}",
+            "error_type": "claude_parse_failure",
+            "error_message": "={{ ($json.raw_claude_response || '').substring(0,500) }}",
+            "raw_input": "={{ ($json.message_clean || '').substring(0,500) }}",
+            "node_name": "Claude Response Parser"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "error_type",
+              "displayName": "error_type",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "error_message",
+              "displayName": "error_message",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "raw_input",
+              "displayName": "raw_input",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "node_name",
+              "displayName": "node_name",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4ca0769c-4859-4297-801c-705eebe4e2a9",
+      "name": "Log Parse Failure",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        1376,
+        -304
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $env.TWILIO_ACCOUNT_SID }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json.phone_normalized }}"
+            },
+            {
+              "name": "From",
+              "value": "={{ $env.TWILIO_PHONE_NUMBER }}"
+            },
+            {
+              "name": "Body",
+              "value": "=Hi, thanks for contacting {{ $env.BUSINESS_NAME }}! We received your message and will be in touch shortly. — Reply STOP to opt out."
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "a262e5c9-2da9-406e-a0a3-52c03a855518",
+      "name": "Generic Fallback SMS to Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1600,
+        -304
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "",
+          "name": "Unnamed credential"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $env.TWILIO_ACCOUNT_SID }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $env.OWNER_PHONE }}"
+            },
+            {
+              "name": "From",
+              "value": "={{ $env.TWILIO_PHONE_NUMBER }}"
+            },
+            {
+              "name": "Body",
+              "value": "=⚠️ {{ $env.BUSINESS_NAME }} — AI failed to process lead from {{ $json.phone_normalized }}. Please check manually."
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "7971fee2-65b1-4ccd-a38d-ce93167d0578",
+      "name": "Notify Owner of Failure",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1824,
+        -304
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "",
+          "name": "Unnamed credential"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.recommended_action }}",
+                    "rightValue": "ignore",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent_score }}",
+                    "rightValue": 80,
+                    "operator": {
+                      "type": "number",
+                      "operation": "gte"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent_score }}",
+                    "rightValue": 50,
+                    "operator": {
+                      "type": "number",
+                      "operation": "gte"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent_score }}",
+                    "rightValue": 0,
+                    "operator": {
+                      "type": "number",
+                      "operation": "gte"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "C_low"
+        }
+      },
+      "id": "94dca410-370e-4788-9030-8cf6c4543ddb",
+      "name": "Route by Intent",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1376,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $json;\nconst firstName = d.name ? String(d.name).trim().split(/\\s+/)[0] : null;\nconst greeting = firstName ? `Hi ${firstName},` : 'Hi there,';\nconst svc = d.service_requested || 'your inquiry';\nconst booking = (($env.BOOKING_LINK || '').trim());\nconst biz = ($env.BUSINESS_NAME || 'us');\nconst phone = ($env.BUSINESS_PHONE || '');\n\nlet body;\nlet booking_link_sent;\nif (booking) {\n  body = `${greeting} thanks for contacting ${biz}! We'd love to help with ${svc}. You can book here: ${booking} — Reply STOP to opt out.`;\n  booking_link_sent = true;\n} else {\n  body = `${greeting} thanks for contacting ${biz}! Please give us a call at ${phone}. — Reply STOP to opt out.`;\n  booking_link_sent = false;\n}\n\nreturn [{ json: { ...d, sms_body: body, booking_link_sent } }];"
+      },
+      "id": "8caa05f9-c009-4dc9-9e76-2d46ae0d738d",
+      "name": "Build SMS — High Intent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $env.TWILIO_ACCOUNT_SID }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json.phone_normalized }}"
+            },
+            {
+              "name": "From",
+              "value": "={{ $env.TWILIO_PHONE_NUMBER }}"
+            },
+            {
+              "name": "Body",
+              "value": "={{ $json.sms_body }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "2954fa20-352e-4990-86e7-05f07628a7ee",
+      "name": "Send SMS — High Intent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1824,
+        -112
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "",
+          "name": "Unnamed credential"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $env.TWILIO_ACCOUNT_SID }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $env.OWNER_PHONE }}"
+            },
+            {
+              "name": "From",
+              "value": "={{ $env.TWILIO_PHONE_NUMBER }}"
+            },
+            {
+              "name": "Body",
+              "value": "=🔥 HIGH INTENT LEAD\nName: {{ $json.name || 'Unknown' }}\nService: {{ $json.service_requested }}\nPhone: {{ $json.phone_normalized }}\nScore: {{ $json.intent_score }}/100\nSummary: {{ $json.summary }}\nUrgency: {{ $json.urgency }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "647dfa00-09ff-4df0-b16d-0f2de16ed6b3",
+      "name": "Notify Owner — SMS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2048,
+        -112
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "",
+          "name": "Unnamed credential"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.SMTP_FROM_EMAIL }}",
+        "toEmail": "={{ $env.OWNER_EMAIL }}",
+        "subject": "=🔥 New High-Intent Lead — {{ $env.BUSINESS_NAME }}",
+        "emailFormat": "text",
+        "text": "=A new high-priority lead just came in.\n\nName: {{ $json.name || 'Unknown' }}\nPhone: {{ $json.phone_normalized }}\nService Requested: {{ $json.service_requested }}\nUrgency: {{ $json.urgency }}\nIntent Score: {{ $json.intent_score }}/100\nSummary: {{ $json.summary }}\nInjection Flagged: {{ $json.injection_flagged }}\n\nReceived at: {{ new Date().toISOString() }}",
+        "options": {}
+      },
+      "id": "4bece016-7d78-4487-b5f8-a91be6d6ec56",
+      "name": "Notify Owner — Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2272,
+        -112
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "",
+          "name": "SMTP account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $json;\nconst now = new Date().toISOString();\nconst lead_id = now + '-' + Math.random().toString(36).substring(2, 9);\nconst messageBody = (d.message_clean || '').substring(0, 500);\nreturn [{ json: { ...d, lead_id, lead_timestamp: now, message_body_truncated: messageBody } }];"
+      },
+      "id": "9279a552-42c9-4719-8774-3b2388a55a1e",
+      "name": "Prep Lead Row (A)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2496,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.lead_id }}",
+            "timestamp": "={{ $json.lead_timestamp }}",
+            "name": "={{ $json.name || '' }}",
+            "phone": "={{ $json.phone_normalized }}",
+            "message_body": "={{ $json.message_body_truncated }}",
+            "service_requested": "={{ $json.service_requested }}",
+            "urgency": "={{ $json.urgency }}",
+            "intent_score": "={{ $json.intent_score }}",
+            "recommended_action": "={{ $json.recommended_action }}",
+            "summary": "={{ $json.summary }}",
+            "follow_up_question": "={{ $json.follow_up_question || '' }}",
+            "status": "contacted_high",
+            "notes": "",
+            "last_contact": "={{ $json.lead_timestamp }}",
+            "injection_flagged": "={{ $json.injection_flagged ? 'TRUE' : 'FALSE' }}",
+            "booking_link_sent": "={{ $json.booking_link_sent ? 'TRUE' : 'FALSE' }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "message_body",
+              "displayName": "message_body",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "service_requested",
+              "displayName": "service_requested",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "urgency",
+              "displayName": "urgency",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "intent_score",
+              "displayName": "intent_score",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "recommended_action",
+              "displayName": "recommended_action",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "summary",
+              "displayName": "summary",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "follow_up_question",
+              "displayName": "follow_up_question",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last_contact",
+              "displayName": "last_contact",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "injection_flagged",
+              "displayName": "injection_flagged",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "booking_link_sent",
+              "displayName": "booking_link_sent",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "dcc7a846-79ae-4b2b-818e-a33d1ea13043",
+      "name": "Log Lead — High Intent",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        2720,
+        -112
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// NODE 10B — Build Follow-Up SMS\nconst d = $json;\nconst firstName = d.name ? String(d.name).trim().split(/\\s+/)[0] : null;\nconst greeting = firstName ? `Hi ${firstName},` : 'Hi there,';\nconst biz = $env.BUSINESS_NAME || 'us';\nconst question = (d.follow_up_question || '').trim();\n\nlet body;\nif (question) {\n  body = `${greeting} thanks for contacting ${biz}! ${question} — Reply STOP to opt out.`;\n} else {\n  body = `${greeting} thanks for contacting ${biz}! Can you tell us a bit more about what you're looking for? — Reply STOP to opt out.`;\n}\nreturn [{ json: { ...d, sms_body: body, booking_link_sent: false } }];\n"
+      },
+      "id": "26b3116d-62ff-4058-9f78-9ae619926171",
+      "name": "Build SMS — Follow-Up",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $env.TWILIO_ACCOUNT_SID }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json.phone_normalized }}"
+            },
+            {
+              "name": "From",
+              "value": "={{ $env.TWILIO_PHONE_NUMBER }}"
+            },
+            {
+              "name": "Body",
+              "value": "={{ $json.sms_body }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "29bb2d2f-f981-4500-800f-1efc452d7212",
+      "name": "Send SMS — Follow-Up",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1824,
+        80
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "",
+          "name": "Unnamed credential"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $json;\nconst now = new Date().toISOString();\nconst lead_id = now + '-' + Math.random().toString(36).substring(2, 9);\nconst messageBody = (d.message_clean || '').substring(0, 500);\nreturn [{ json: { ...d, lead_id, lead_timestamp: now, message_body_truncated: messageBody } }];"
+      },
+      "id": "04a7cf74-9739-41eb-848a-876cedfe49c9",
+      "name": "Prep Lead Row (B)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2048,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.lead_id }}",
+            "timestamp": "={{ $json.lead_timestamp }}",
+            "name": "={{ $json.name || '' }}",
+            "phone": "={{ $json.phone_normalized }}",
+            "message_body": "={{ $json.message_body_truncated }}",
+            "service_requested": "={{ $json.service_requested }}",
+            "urgency": "={{ $json.urgency }}",
+            "intent_score": "={{ $json.intent_score }}",
+            "recommended_action": "={{ $json.recommended_action }}",
+            "summary": "={{ $json.summary }}",
+            "follow_up_question": "={{ $json.follow_up_question || '' }}",
+            "status": "follow_up_scheduled",
+            "notes": "",
+            "last_contact": "={{ $json.lead_timestamp }}",
+            "injection_flagged": "={{ $json.injection_flagged ? 'TRUE' : 'FALSE' }}",
+            "booking_link_sent": "FALSE"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "message_body",
+              "displayName": "message_body",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "service_requested",
+              "displayName": "service_requested",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "urgency",
+              "displayName": "urgency",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "intent_score",
+              "displayName": "intent_score",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "recommended_action",
+              "displayName": "recommended_action",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "summary",
+              "displayName": "summary",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "follow_up_question",
+              "displayName": "follow_up_question",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last_contact",
+              "displayName": "last_contact",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "injection_flagged",
+              "displayName": "injection_flagged",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "booking_link_sent",
+              "displayName": "booking_link_sent",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6da5b889-f267-4d09-9be7-f8dd7ae17ba4",
+      "name": "Log Lead — Follow-Up",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        2272,
+        80
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.WORKFLOW2_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"phone\": \"{{ $json.phone_normalized }}\",\n  \"name\": {{ JSON.stringify($json.name || null) }},\n  \"service_requested\": {{ JSON.stringify($json.service_requested || '') }},\n  \"intent_score\": {{ $json.intent_score }},\n  \"follow_up_question\": {{ JSON.stringify($json.follow_up_question || null) }},\n  \"lead_ref\": \"{{ $json.lead_id }}\",\n  \"delay_hours\": 24\n}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "c71cac5e-381c-43ab-bd39-970281f08053",
+      "name": "Trigger Workflow 2 (24h Follow-Up)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2496,
+        80
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $json;\nconst now = new Date().toISOString();\nconst lead_id = now + '-' + Math.random().toString(36).substring(2, 9);\nconst messageBody = (d.message_clean || '').substring(0, 500);\nreturn [{ json: { ...d, lead_id, lead_timestamp: now, message_body_truncated: messageBody } }];"
+      },
+      "id": "f5e96778-2a4c-4912-9ad9-449507210b51",
+      "name": "Prep Lead Row (C)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.lead_id }}",
+            "timestamp": "={{ $json.lead_timestamp }}",
+            "name": "={{ $json.name || '' }}",
+            "phone": "={{ $json.phone_normalized }}",
+            "message_body": "={{ $json.message_body_truncated }}",
+            "service_requested": "={{ $json.service_requested }}",
+            "urgency": "={{ $json.urgency }}",
+            "intent_score": "={{ $json.intent_score }}",
+            "recommended_action": "={{ $json.recommended_action }}",
+            "summary": "={{ $json.summary }}",
+            "follow_up_question": "={{ $json.follow_up_question || '' }}",
+            "status": "low_priority",
+            "notes": "",
+            "last_contact": "={{ $json.lead_timestamp }}",
+            "injection_flagged": "={{ $json.injection_flagged ? 'TRUE' : 'FALSE' }}",
+            "booking_link_sent": "FALSE"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "message_body",
+              "displayName": "message_body",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "service_requested",
+              "displayName": "service_requested",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "urgency",
+              "displayName": "urgency",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "intent_score",
+              "displayName": "intent_score",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "recommended_action",
+              "displayName": "recommended_action",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "summary",
+              "displayName": "summary",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "follow_up_question",
+              "displayName": "follow_up_question",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last_contact",
+              "displayName": "last_contact",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "injection_flagged",
+              "displayName": "injection_flagged",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "booking_link_sent",
+              "displayName": "booking_link_sent",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5598bf8c-0275-4b13-ada0-c8a399e59966",
+      "name": "Log Lead — Low Priority",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        1824,
+        272
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Webhook (Follow-Up Trigger)": {
+      "main": [
+        [
+          {
+            "node": "Validate Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Payload": {
+      "main": [
+        [
+          {
+            "node": "Payload Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Payload Valid?": {
+      "main": [
+        [
+          {
+            "node": "Wait 24h (Configurable)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Invalid Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 24h (Configurable)": {
+      "main": [
+        [
+          {
+            "node": "Lookup Current Lead Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Current Lead Status": {
+      "main": [
+        [
+          {
+            "node": "Read Opt-Outs (Safety Recheck)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Opt-Outs (Safety Recheck)": {
+      "main": [
+        [
+          {
+            "node": "Status Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status Gate": {
+      "main": [
+        [
+          {
+            "node": "Send Follow-Up?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Follow-Up?": {
+      "main": [
+        [
+          {
+            "node": "Build Follow-Up SMS",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stop — Status Gate Blocked",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Follow-Up SMS": {
+      "main": [
+        [
+          {
+            "node": "Send Follow-Up SMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Follow-Up SMS": {
+      "main": [
+        [
+          {
+            "node": "Prep Lead Status Update",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log SMS Send Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log SMS Send Failure": {
+      "main": [
+        [
+          {
+            "node": "Notify Owner of Send Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Lead Status Update": {
+      "main": [
+        [
+          {
+            "node": "Update Lead → follow_up_sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook (Twilio Inbound SMS)": {
+      "main": [
+        [
+          {
+            "node": "Twilio Signature Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Twilio Signature Validation": {
+      "main": [
+        [
+          {
+            "node": "Read Opt-Outs Tab",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Opt-Outs Tab": {
+      "main": [
+        [
+          {
+            "node": "Opt-Out Detection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Opt-Out Detection": {
+      "main": [
+        [
+          {
+            "node": "Opt-Out Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Opt-Out Router": {
+      "main": [
+        [
+          {
+            "node": "Append to Opt-Outs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Help SMS",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolve START Target Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stop — Already Opted Out",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Rate Limit Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append to Opt-Outs": {
+      "main": [
+        [
+          {
+            "node": "Send Opt-Out Confirmation SMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve START Target Row": {
+      "main": [
+        [
+          {
+            "node": "Has Opt-Out Row To Remove?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Opt-Out Row To Remove?": {
+      "main": [
+        [
+          {
+            "node": "Remove from Opt-Outs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Resubscribe SMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remove from Opt-Outs": {
+      "main": [
+        [
+          {
+            "node": "Send Resubscribe SMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rate Limit Check": {
+      "main": [
+        [
+          {
+            "node": "Rate Limit Long-Term Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rate Limit Long-Term Log": {
+      "main": [
+        [
+          {
+            "node": "Data Cleaning",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Cleaning": {
+      "main": [
+        [
+          {
+            "node": "Lookup Existing Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Existing Leads": {
+      "main": [
+        [
+          {
+            "node": "Deduplication Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deduplication Logic": {
+      "main": [
+        [
+          {
+            "node": "Is Duplicate?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Duplicate?": {
+      "main": [
+        [
+          {
+            "node": "Append Duplicate to Notes",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Claude Classification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Classification": {
+      "main": [
+        [
+          {
+            "node": "Claude Response Parser",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Response Parser": {
+      "main": [
+        [
+          {
+            "node": "Parse Failed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Failed?": {
+      "main": [
+        [
+          {
+            "node": "Log Parse Failure",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Route by Intent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Parse Failure": {
+      "main": [
+        [
+          {
+            "node": "Generic Fallback SMS to Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generic Fallback SMS to Lead": {
+      "main": [
+        [
+          {
+            "node": "Notify Owner of Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Intent": {
+      "main": [
+        [
+          {
+            "node": "Prep Lead Row (C)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build SMS — High Intent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build SMS — Follow-Up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build SMS — High Intent": {
+      "main": [
+        [
+          {
+            "node": "Send SMS — High Intent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send SMS — High Intent": {
+      "main": [
+        [
+          {
+            "node": "Notify Owner — SMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Owner — SMS": {
+      "main": [
+        [
+          {
+            "node": "Notify Owner — Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Owner — Email": {
+      "main": [
+        [
+          {
+            "node": "Prep Lead Row (A)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Lead Row (A)": {
+      "main": [
+        [
+          {
+            "node": "Log Lead — High Intent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build SMS — Follow-Up": {
+      "main": [
+        [
+          {
+            "node": "Send SMS — Follow-Up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send SMS — Follow-Up": {
+      "main": [
+        [
+          {
+            "node": "Prep Lead Row (B)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Lead Row (B)": {
+      "main": [
+        [
+          {
+            "node": "Log Lead — Follow-Up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Lead — Follow-Up": {
+      "main": [
+        [
+          {
+            "node": "Trigger Workflow 2 (24h Follow-Up)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Lead Row (C)": {
+      "main": [
+        [
+          {
+            "node": "Log Lead — Low Priority",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "activeVersionId": "e8fc3def-4877-488a-842d-b56336a837bc",
+  "versionCounter": 71,
+  "versionMetadata": {
+    "name": "Version 3.0",
+    "description": "Fixed Prep Lead Row nodes"
+  }
+}

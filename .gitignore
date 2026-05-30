@@ -40,6 +40,11 @@ n8n-data/
 
 # --- Local tooling / harness ---
 .claude/
+.tmp/
+
+# --- n8n raw exports (pre-sanitization, NEVER commit) ---
+workflows/*.raw.json
+*.bak
 
 # --- OS / editor noise ---
 .DS_Store
